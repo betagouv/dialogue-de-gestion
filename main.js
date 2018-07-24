@@ -19,6 +19,14 @@ const schemas = [{
     { name: 'Convention' },
     { name: 'TypeConvention' },
   ]
+}, {
+  name: 'payments',
+  prefix: 'Paiement',
+  fields: [
+    { name: 'EJ' },
+    { name: 'Date', process: utils.ExcelDateToJSDate },
+    { name: 'Montant' },
+  ]
 }]
 
 
@@ -45,12 +53,12 @@ console.error(searchBatch.toString())
 const conf = {
   json: true,
   uri: `https://sheets.googleapis.com/v4/spreadsheets/${sid}/values:batchGet?${searchBatch}`,
-
 };
 rp(conf)
 .then(structure)
 .then(data => {
   console.log(JSON.stringify(data, null, 2))
+  console.log([data.orders.length, data.payments.length])
 })
 //*/
 
