@@ -6,8 +6,22 @@ const utils = require('./utils')
 const sid = process.env.SHEET_SID
 var qs = { key: process.env.API_KEY }
 
-const namedRanges = ['BCIntitulé', 'BCMontantTTC', 'BCNumero', 'BCDateEJ', 'BCDatePaiement', 'BCRaP', 'BCConvention', 'BCTypeConvention']
+const namedRanges = ['BCIntitulé', 'BCMontantTTC', 'BCNumero', 'BCDateEJ', 'BCDatePaiement', 'BCRaP', 'BCConvention', 'BCTypeConvention'] 
 
+const schemas = [{
+  name: 'orders',
+  prefix: 'BC',
+  fields: [
+    { name: 'Intitulé' },
+    { name: 'MontantTTC' },
+    { name: 'Numero' },
+    { name: 'DateEJ', process: utils.ExcelDateToJSDate },
+    { name: 'DatePaiement' },
+    { name: 'RaP' },
+    { name: 'Convention' },
+    { name: 'TypeConvention' },
+  ]
+}]
 
 
 /*
@@ -42,30 +56,38 @@ rp(conf)
 })
 //*/
 
-function structure(orderData) {
-  orderData.valueRanges.forEach(range => {
+function structure(data) {
+  // From table to vector
+  data.valueRanges.forEach(range => {
     range.values = range.values.map(rowData => rowData[0] || 0 )
   })
 
-  var orders = orderData.valueRanges[0].values.map((v, lineNumber) => {
-    var order = namedRanges.reduce((obj, name, fieldNumber) => {
-      obj[name] = orderData.valueRanges[fieldNumber].values[lineNumber]
-      return obj
-    }, {})
+  return schemas.reduce((accum, schema) => {
+    var objects = data.valueRanges[accum.rangeIndex].values.map((v, lineNumber) => {
 
-    order.BCDateEJ = utils.ExcelDateToJSDate(order.BCDateEJ);
-    return order
-  })
+      return schema.fields.reduce((object, field, fieldIndex) => {
+        const value = data.valueRanges[accum.rangeIndex + fieldIndex].values[lineNumber]
+        object[field.name] = field.process ? field.process(value) : value
 
-  return orders
+        return object
+      }, {})
+    })
+
+    accum.rangeIndex = accum.rangeIndex + schema.fields.length
+    accum.models[schema.name] = objects
+
+    return accum
+  }, { rangeIndex: 0, models: {} }).models
 }
 
 
 const named = require('./bcnamed.json')
-var orders = structure(named);
 
-orders = orders.filter((order) => order.BCTypeConvention != 'Délégation de gestion')
+var objects = structure(named);
 
+console.log(objects)
+var orders = objects.orders;
+orders = orders.filter((order) => order.TypeConvention != 'Délégation de gestion')
 
 /*
 // Current year
@@ -73,14 +95,13 @@ const startOfYear = new Date(2018, 0, 1)
 orders = orders.filter((order) => startOfYear <= order.BCDateEJ)
 */
 
-
-orders = orders.filter((order) => order.BCNumero)
+orders = orders.filter((order) => order.Numero)
 orders = orders.slice(1)
-orders.sort((a, b) => b.BCMontantTTC - a.BCMontantTTC)
+orders.sort((a, b) => b.MontantTTC - a.MontantTTC)
 
 console.log(JSON.stringify(orders, null, 2))
 console.log(JSON.stringify(orders.length, null, 2))
-console.log(JSON.stringify(orders.reduce((s,o) => { console.log(s); return s + o.BCMontantTTC }, 0), null, 2))
+console.log(JSON.stringify(orders.reduce((s,o) => { console.log(s); return s + o.MontantTTC }, 0), null, 2))
 
 //*/
 /*
