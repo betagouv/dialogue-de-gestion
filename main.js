@@ -6,8 +6,6 @@ const utils = require('./utils')
 const sid = process.env.SHEET_SID
 var qs = { key: process.env.API_KEY }
 
-const namedRanges = ['BCIntitulé', 'BCMontantTTC', 'BCNumero', 'BCDateEJ', 'BCDatePaiement', 'BCRaP', 'BCConvention', 'BCTypeConvention'] 
-
 const schemas = [{
   name: 'orders',
   prefix: 'BC',
@@ -36,12 +34,12 @@ rp({
 //*/
 
 
-/*
+//*
 var searchBatch = new url.URLSearchParams()
 searchBatch.append('key', qs.key)
 searchBatch.append('valueRenderOption', 'UNFORMATTED_VALUE')
 searchBatch.append('dateTimeRenderOption', 'SERIAL_NUMBER')
-namedRanges.forEach(range => searchBatch.append('ranges', range))
+schemas.forEach(schema => schema.fields.forEach(field => searchBatch.append('ranges', schema.prefix + field.name)))
 console.error(searchBatch.toString())
 
 const conf = {
@@ -50,7 +48,7 @@ const conf = {
 
 };
 rp(conf)
-//.then(structure)
+.then(structure)
 .then(data => {
   console.log(JSON.stringify(data, null, 2))
 })
@@ -80,7 +78,7 @@ function structure(data) {
   }, { rangeIndex: 0, models: {} }).models
 }
 
-
+/*
 const named = require('./bcnamed.json')
 
 var objects = structure(named);
@@ -89,11 +87,12 @@ console.log(objects)
 var orders = objects.orders;
 orders = orders.filter((order) => order.TypeConvention != 'Délégation de gestion')
 
-/*
-// Current year
-const startOfYear = new Date(2018, 0, 1)
-orders = orders.filter((order) => startOfYear <= order.BCDateEJ)
-*/
+
+if (0) {
+  // Current year
+  const startOfYear = new Date(2018, 0, 1)
+  orders = orders.filter((order) => startOfYear <= order.BCDateEJ)
+}
 
 orders = orders.filter((order) => order.Numero)
 orders = orders.slice(1)
