@@ -1,0 +1,17 @@
+{
+  "name": "Generation",
+  "version": "0.1.0",
+  "description": "Create basic GeoJSON API - l'annuaire de l’administration",
+  "main": "main.js",
+  "author": "Thomas Guillet <guillet.thomas@gmail.com>",
+  "license": "MIT",
+  "repository": "git@github.com:betagouv/annuaire-api.git",
+  "dependencies": {
+    "bluebird": "^3.5.0",
+    "express": "^4.16.2",
+    "request": "^2.83.0",
+    "request-promise": "^4.2.2"
+  },
+  "devDependencies": {},
+  "scripts": {}
+}
