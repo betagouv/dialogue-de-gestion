@@ -1,4 +1,5 @@
 Promise = require('bluebird')
+const fs = Promise.promisifyAll(require('fs'))
 const rp = require('request-promise')
 const url = require('url')
 
@@ -9,6 +10,8 @@ var qs = { key: process.env.API_KEY }
 const schemas = [{
   name: 'orders',
   prefix: 'BC',
+  key: 'Numero',
+  constr: () => { return { payments: [] } },
   fields: [
     { name: 'Intitulé' },
     { name: 'MontantTTC' },
@@ -31,39 +34,6 @@ const schemas = [{
   ]
 }]
 
-
-/*
-rp({
-  uri: `https://sheets.googleapis.com/v4/spreadsheets/${sid}`,
-  qs: qs,
-  json: true
-})
-.then(data => {
-  console.log(JSON.stringify(data, null, 2))
-})
-//*/
-
-
-//*
-var searchBatch = new url.URLSearchParams()
-searchBatch.append('key', qs.key)
-searchBatch.append('valueRenderOption', 'UNFORMATTED_VALUE')
-searchBatch.append('dateTimeRenderOption', 'SERIAL_NUMBER')
-schemas.forEach(schema => schema.fields.forEach(field => searchBatch.append('ranges', schema.prefix + field.name)))
-console.error(searchBatch.toString())
-
-const conf = {
-  json: true,
-  uri: `https://sheets.googleapis.com/v4/spreadsheets/${sid}/values:batchGet?${searchBatch}`,
-};
-rp(conf)
-.then(structure)
-.then(data => {
-  console.log(JSON.stringify(data, null, 2))
-  console.log([data.orders.length, data.payments.length])
-})
-//*/
-
 function structure(data) {
   // From table to vector
   data.valueRanges.forEach(range => {
@@ -78,7 +48,7 @@ function structure(data) {
         object[field.name] = field.process ? field.process(value) : value
 
         return object
-      }, {})
+      }, Object.assign({}, schema.constr ? schema.constr() : {}))
     })
 
     accum.rangeIndex = accum.rangeIndex + schema.fields.length
@@ -88,32 +58,70 @@ function structure(data) {
   }, { rangeIndex: 0, models: {} }).models
 }
 
-/*
-const named = require('./bcnamed.json')
+function createRelationships(data) {
+  const keyedOrders = data.orders.reduce((obj, order) => {
+    if (! order.Numero) {
+      return obj
+    }
 
-var objects = structure(named);
+    obj[order.Numero] = order
 
-console.log(objects)
-var orders = objects.orders;
-orders = orders.filter((order) => order.TypeConvention != 'Délégation de gestion')
+    return obj
+  }, {})
 
+  data.payments.forEach((payment) => {
+    if (! keyedOrders[payment.EJ]) {
+      return
+    }
 
-if (0) {
-  // Current year
-  const startOfYear = new Date(2018, 0, 1)
-  orders = orders.filter((order) => startOfYear <= order.BCDateEJ)
+    var order = keyedOrders[payment.EJ]
+    if (! order.Numero) {
+      return
+    }
+
+    if (order.Numero !== payment.EJ) {
+      console.log([order, payment])
+      throw e
+    }
+
+    order.payments.push(payment)
+  })
+
+  return data
 }
 
-orders = orders.filter((order) => order.Numero)
-orders = orders.slice(1)
-orders.sort((a, b) => b.MontantTTC - a.MontantTTC)
+function computeSums(data) {
+  data.orders.forEach((order) => {
+    order.RaPComputed = order.MontantTTC - order.payments.reduce((sum, payment) => sum + payment.Montant, 0)
+  })
 
-console.log(JSON.stringify(orders, null, 2))
-console.log(JSON.stringify(orders.length, null, 2))
-console.log(JSON.stringify(orders.reduce((s,o) => { console.log(s); return s + o.MontantTTC }, 0), null, 2))
+  return data
+}
 
-//*/
-/*
-const full = require('./fulldata.json')
-console.log(full.namedRanges.map((r) => r.name).sort())
-//*/
+function restitute(data) {
+  console.log(JSON.stringify(data, null, 2))
+  console.warn(JSON.stringify(data.orders, null, 2))
+  console.warn(JSON.stringify(data.orders.filter(o => o.RaPComputed != o.RaP), null, 2))
+  console.warn([data.orders.length, data.payments.length])
+}
+
+var searchBatch = new url.URLSearchParams()
+searchBatch.append('key', qs.key)
+searchBatch.append('valueRenderOption', 'UNFORMATTED_VALUE')
+searchBatch.append('dateTimeRenderOption', 'SERIAL_NUMBER')
+schemas.forEach(schema => schema.fields.forEach(field => searchBatch.append('ranges', schema.prefix + field.name)))
+const conf = {
+  json: true,
+  uri: `https://sheets.googleapis.com/v4/spreadsheets/${sid}/values:batchGet?${searchBatch}`,
+};
+
+(new Promise((resolve) => { resolve(require('./data.json')) }))
+.catch(() => {
+  console.error(searchBatch.toString())
+  return rp(conf)
+  .then(data => fs.writeFileAsync('data.json', JSON.stringify(data, null, 2), 'utf-8').then(() => data))
+})
+.then(structure)
+.then(createRelationships)
+.then(computeSums)
+.then(restitute)
