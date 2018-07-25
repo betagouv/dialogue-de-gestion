@@ -11,7 +11,7 @@ const schemas = [{
   name: 'orders',
   prefix: 'BC',
   key: 'Numero',
-  constr: () => { return { payments: [] } },
+  constr: () => { return { payments: [], reimbursements: [] } },
   fields: [
     { name: 'Intitulé' },
     { name: 'MontantTTC' },
@@ -21,6 +21,7 @@ const schemas = [{
     { name: 'DatePaiement', process: utils.ExcelDateToJSDate },
     { name: 'RaR' },
     { name: 'DateRbm', process: utils.ExcelDateToJSDate },
+    { name: 'FondsPropres' },
     { name: 'Convention' },
     { name: 'TypeConvention' },
   ]
@@ -80,22 +81,25 @@ function createRelationships(data) {
     return obj
   }, {})
 
-  data.payments.forEach((payment) => {
-    if (! keyedOrders[payment.EJ]) {
-      return
-    }
+  const props = ['payments', 'reimbursements']
+  props.forEach(field => {
+    data[field].forEach((obj) => {
+      if (! keyedOrders[obj.EJ]) {
+        return
+      }
 
-    var order = keyedOrders[payment.EJ]
-    if (! order.Numero) {
-      return
-    }
+      var order = keyedOrders[obj.EJ]
+      if (! order.Numero) {
+        return
+      }
 
-    if (order.Numero !== payment.EJ) {
-      console.log([order, payment])
-      throw e
-    }
+      if (order.Numero !== obj.EJ) {
+        console.log([order, obj])
+        throw e
+      }
 
-    order.payments.push(payment)
+      order[field].push(obj)
+    })//*/
   })
 
   return data
@@ -104,6 +108,7 @@ function createRelationships(data) {
 function computeSums(data) {
   data.orders.forEach((order) => {
     order.RaPComputed = order.MontantTTC - order.payments.reduce((sum, payment) => sum + payment.Montant, 0)
+    order.RaRComputed = order.MontantTTC - order.FondsPropres - order.reimbursements.reduce((sum, payment) => sum + payment.Montant, 0)
   })
 
   return data
@@ -111,10 +116,10 @@ function computeSums(data) {
 
 function restitute(data) {
   console.log(JSON.stringify(data, null, 2))
-  console.warn(JSON.stringify(data.orders, null, 2))
-
+  //console.warn(JSON.stringify(data.orders, null, 2))
   // Validate RaP field
   console.warn(JSON.stringify(data.orders.filter(o => o.TypeConvention != 'Délégation de gestion' && o.RaPComputed != o.RaP), null, 2))
+  console.warn(JSON.stringify(data.orders.filter(o => ['Refacturation', 'Fonds de concours'].indexOf(o.TypeConvention) >= 0 && o.RaRComputed != o.RaR), null, 2))
   console.warn([data.orders.length, data.payments.length])
 }
 
