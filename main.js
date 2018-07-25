@@ -14,8 +14,10 @@ const schemas = [{
     { name: 'MontantTTC' },
     { name: 'Numero' },
     { name: 'DateEJ', process: utils.ExcelDateToJSDate },
-    { name: 'DatePaiement' },
     { name: 'RaP' },
+    { name: 'DatePaiement', process: utils.ExcelDateToJSDate },
+    { name: 'RaR' },
+    { name: 'DateRbm', process: utils.ExcelDateToJSDate },
     { name: 'Convention' },
     { name: 'TypeConvention' },
   ]
