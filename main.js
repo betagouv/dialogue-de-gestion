@@ -32,6 +32,14 @@ const schemas = [{
     { name: 'Date', process: utils.ExcelDateToJSDate },
     { name: 'Montant' },
   ]
+}, {
+  name: 'reimbursements',
+  prefix: 'RbmAlloc',
+  fields: [
+    { name: 'EJ' },
+    { name: 'Date', process: utils.ExcelDateToJSDate },
+    { name: 'Montant' },
+  ]
 }]
 
 function structure(data) {
