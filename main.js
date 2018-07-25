@@ -42,17 +42,20 @@ function structure(data) {
 
   return schemas.reduce((accum, schema) => {
     var objects = data.valueRanges[accum.rangeIndex].values.map((v, lineNumber) => {
-
-      return schema.fields.reduce((object, field, fieldIndex) => {
+      var obj = schema.fields.reduce((object, field, fieldIndex) => {
         const value = data.valueRanges[accum.rangeIndex + fieldIndex].values[lineNumber]
         object[field.name] = field.process ? field.process(value) : value
 
         return object
       }, Object.assign({}, schema.constr ? schema.constr() : {}))
+
+      obj.index = lineNumber
+
+      return obj;
     })
 
     accum.rangeIndex = accum.rangeIndex + schema.fields.length
-    accum.models[schema.name] = objects
+    accum.models[schema.name] = objects.slice(1) // Drop header line
 
     return accum
   }, { rangeIndex: 0, models: {} }).models
@@ -101,7 +104,9 @@ function computeSums(data) {
 function restitute(data) {
   console.log(JSON.stringify(data, null, 2))
   console.warn(JSON.stringify(data.orders, null, 2))
-  console.warn(JSON.stringify(data.orders.filter(o => o.RaPComputed != o.RaP), null, 2))
+
+  // Validate RaP field
+  console.warn(JSON.stringify(data.orders.filter(o => o.TypeConvention != 'Délégation de gestion' && o.RaPComputed != o.RaP), null, 2))
   console.warn([data.orders.length, data.payments.length])
 }
 
