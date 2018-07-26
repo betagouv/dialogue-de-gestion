@@ -114,13 +114,81 @@ function computeSums(data) {
   return data
 }
 
+const startOfYear = new Date(2018, 0, 1)
+fluxPropres = o => ['Fonds propres', 'Refacturation', 'Fonds de concours'].indexOf(o.TypeConvention) >= 0
+fluxCourants = o => startOfYear <= Math.max(o.DateEJ, o.DatePaiement, o.DateRbm)
+
+var headers = [
+'Activités/Projets',
+'Type de mouvement',
+'Objet de la dépense',
+'Prestataires/Marchés',
+'Références (n° bdc/n°Conv)',
+'RàP 2016 (CP 2017 sur AE<=2016)',
+'AE janv-Avril',
+'AE mai-aout',
+'AE sept-dec',
+'CP janv-Avril',
+'CP mai-aout',
+'CP sept-dec',
+'RàP 2017 sur CP 2018',
+'Statut',
+'Commentaires',
+]
+
 function restitute(data) {
-  console.log(JSON.stringify(data, null, 2))
-  //console.warn(JSON.stringify(data.orders, null, 2))
-  // Validate RaP field
-  console.warn(JSON.stringify(data.orders.filter(o => o.TypeConvention != 'Délégation de gestion' && o.RaPComputed != o.RaP), null, 2))
-  console.warn(JSON.stringify(data.orders.filter(o => ['Refacturation', 'Fonds de concours'].indexOf(o.TypeConvention) >= 0 && o.RaRComputed != o.RaR), null, 2))
-  console.warn([data.orders.length, data.payments.length])
+
+  var categories = [, {
+    name: 'DoneMoins1',
+    predicate: (o) => o.DateEJ <= startOfYear && (! o.RaP) && (! o.RaR) && (startOfYear <= Math.max(o.DateEJ, o.DatePaiement, o.DateRbm))
+  }, {
+    name: 'RAPMoins1',
+    predicate: (o) => o.DateEJ <= startOfYear && o.RaP
+  }, {
+    name: 'RARMoins1',
+    predicate: (o) => o.DateEJ <= startOfYear && o.RaR
+  }, {
+    name: 'Done',
+    predicate: (o) => startOfYear < o.DateEJ && o.Numero && (! o.RaP) && (! o.RaR)
+  }, {
+    name: 'RAP',
+    predicate: (o) => startOfYear < o.DateEJ && o.Numero && o.RaP
+  }, {
+    name: 'RAR',
+    predicate: (o) => startOfYear < o.DateEJ && o.Numero && o.RaR
+  }, {
+    name: 'RAE',
+    predicate: (o) => o
+  }]
+
+  data.orders.sort(function(a, b) { return a.DateEJ - b.DateEJ })
+  const dialogue = categories.reduce((result, category) => {
+    const selection = result.orders.filter(category.predicate)
+
+    result.orders = result.orders.filter(o => ! category.predicate(o))
+    result.output[category.name] = selection.map(o => {
+      var operations = []
+
+      var res = headers.map(o => '')
+      res[0] = o.Intitulé
+      res[1] = 'Dépense UO DINSIC (yc sur facture interne interministérielle)'
+      // rétablissements de crédits uo dinsic (cf convention)
+
+      operations.push(res)
+
+      return operations
+    })
+
+    return result
+  }, { orders: data.orders.filter(fluxPropres).filter(fluxCourants), output: {} })
+
+  console.log(JSON.stringify({
+    full: data,
+    //RAPValidation: data.orders.filter(o => o.TypeConvention != 'Délégation de gestion' && o.RaPComputed != o.RaP),
+    //RARValidation: data.orders.filter(o => ['Refacturation', 'Fonds de concours'].indexOf(o.TypeConvention) >= 0 && o.RaRComputed != o.RaR),
+    dialogue: dialogue,
+    counts: [data.orders.length, data.payments.length],
+  }, null, 2))
 }
 
 var searchBatch = new url.URLSearchParams()
