@@ -7,6 +7,12 @@ const utils = require('./utils')
 const sid = process.env.SHEET_SID
 var qs = { key: process.env.API_KEY }
 
+const year = 2018
+const startOfYear = new Date(year, 0, 1)
+const endOfYear = new Date(year + 1, 0, 1)
+const dates = [startOfYear, new Date(year, 4, 1), new Date(year, 8, 1), endOfYear]
+periodIdx = d => dates.reduce((a, p) => a + (p < d ? 1 : 0), -1)
+
 const schemas = [{
   name: 'orders',
   prefix: 'BC',
@@ -24,7 +30,18 @@ const schemas = [{
     { name: 'FondsPropres' },
     { name: 'Convention' },
     { name: 'TypeConvention' },
-  ]
+  ],
+  computedFields: [{
+    name: 'RAPEJ',
+    formula: order => {
+      return order.MontantTTC - order.payments.reduce((accum, payment) => accum + (payment.Date < startOfYear ? payment.Montant : 0), 0)
+    }
+  }, {
+    name: 'RAREJ',
+    formula: order => {
+      return order.RaR + order.reimbursements.reduce((accum, reimbursement) => accum + (startOfYear < reimbursement.Date ? reimbursement.Montant : 0), 0)
+    }
+  }]
 }, {
   name: 'payments',
   prefix: 'Paiement',
@@ -59,8 +76,7 @@ function structure(data) {
       }, Object.assign({}, schema.constr ? schema.constr() : {}))
 
       obj.index = lineNumber
-
-      return obj;
+      return obj
     })
 
     accum.rangeIndex = accum.rangeIndex + schema.fields.length
@@ -99,7 +115,24 @@ function createRelationships(data) {
       }
 
       order[field].push(obj)
-    })//*/
+    })
+  })
+  return data
+}
+
+function computeFields(data) {
+  schemas.forEach((schema) => {
+    if (! schema.computedFields) {
+      return
+    }
+
+      var objects = data[schema.name]
+      objects.forEach(obj => {
+        schema.computedFields.forEach(field => {
+
+          obj[field.name] = field.formula(obj)
+        })
+      })
   })
 
   return data
@@ -114,9 +147,8 @@ function computeSums(data) {
   return data
 }
 
-const startOfYear = new Date(2018, 0, 1)
-fluxPropres = o => ['Fonds propres', 'Refacturation', 'Fonds de concours'].indexOf(o.TypeConvention) >= 0
-fluxCourants = o => startOfYear <= Math.max(o.DateEJ, o.DatePaiement, o.DateRbm)
+const fluxPropres = (o) => ['Fonds propres', 'Refacturation', 'Fonds de concours', 'Transfert de crédit'].indexOf(o.TypeConvention) >= 0
+const fluxCourants = (o) => startOfYear <= Math.max(o.DateEJ, o.DatePaiement, o.DateRbm)
 
 var headers = [
 'Activités/Projets',
@@ -125,43 +157,54 @@ var headers = [
 'Prestataires/Marchés',
 'Références (n° bdc/n°Conv)',
 'RàP 2016 (CP 2017 sur AE<=2016)',
-'AE janv-Avril',
+'AE janv-avril',
 'AE mai-aout',
 'AE sept-dec',
-'CP janv-Avril',
+'CP janv-avril',
 'CP mai-aout',
 'CP sept-dec',
 'RàP 2017 sur CP 2018',
 'Statut',
 'Commentaires',
+'Catégorie'
 ]
 
+idxH = n => headers.indexOf(n)
+hasCP = row => ['CP janv-avril', 'CP mai-aout', 'CP sept-dec', 'RàP 2017 sur CP 2018'].map(n => row[idxH(n)]).reduce((a, v) => a || v, false)
+
+var categories = [{
+  name: 'DoneMoins1',
+  predicate: (o) => o.DateEJ <= startOfYear && (! o.RaP) && (! o.RaR) && (startOfYear <= Math.max(o.DateEJ, o.DatePaiement, o.DateRbm)),
+  status: 'Terminé',
+}, {
+  name: 'RAPMoins1',
+  predicate: (o) => o.DateEJ <= startOfYear && o.RaP,
+  status: 'SF Partiel',
+}, {
+  name: 'RARMoins1',
+  predicate: (o) => o.DateEJ <= startOfYear && o.RaR,
+  status: 'EL Partiel',
+}, {
+  name: 'Done',
+  predicate: (o) => startOfYear < o.DateEJ && o.Numero && (! o.RaP) && (! o.RaR),
+  status: 'Terminé',
+}, {
+  name: 'RAP',
+  predicate: (o) => startOfYear < o.DateEJ && o.Numero && o.RaP,
+  status: 'SF Partiel',
+}, {
+  name: 'RAR',
+  predicate: (o) => startOfYear < o.DateEJ && o.Numero && o.RaR,
+  status: 'EL Partiel',
+}, {
+  name: 'RAE',
+  predicate: (o) => o,
+  status: 'Prévisionnel',
+}]
+
 function restitute(data) {
+  data.orders.sort(function(a, b) { return (a.DateEJ - b.DateEJ) })
 
-  var categories = [, {
-    name: 'DoneMoins1',
-    predicate: (o) => o.DateEJ <= startOfYear && (! o.RaP) && (! o.RaR) && (startOfYear <= Math.max(o.DateEJ, o.DatePaiement, o.DateRbm))
-  }, {
-    name: 'RAPMoins1',
-    predicate: (o) => o.DateEJ <= startOfYear && o.RaP
-  }, {
-    name: 'RARMoins1',
-    predicate: (o) => o.DateEJ <= startOfYear && o.RaR
-  }, {
-    name: 'Done',
-    predicate: (o) => startOfYear < o.DateEJ && o.Numero && (! o.RaP) && (! o.RaR)
-  }, {
-    name: 'RAP',
-    predicate: (o) => startOfYear < o.DateEJ && o.Numero && o.RaP
-  }, {
-    name: 'RAR',
-    predicate: (o) => startOfYear < o.DateEJ && o.Numero && o.RaR
-  }, {
-    name: 'RAE',
-    predicate: (o) => o
-  }]
-
-  data.orders.sort(function(a, b) { return a.DateEJ - b.DateEJ })
   const dialogue = categories.reduce((result, category) => {
     const selection = result.orders.filter(category.predicate)
 
@@ -169,12 +212,69 @@ function restitute(data) {
     result.output[category.name] = selection.map(o => {
       var operations = []
 
-      var res = headers.map(o => '')
-      res[0] = o.Intitulé
-      res[1] = 'Dépense UO DINSIC (yc sur facture interne interministérielle)'
-      // rétablissements de crédits uo dinsic (cf convention)
+      var gen = (type, cat) => [
+        o.Intitulé,
+        type,
+        o.Intitulé + ' - ' + o.Numero, // Objet de la dépense,
+        o.TypeConvention, // Prestataires/Marchés,
+        o.Numero, // Références (n° bdc/n°Conv),
+        0, // RàP 2016 (CP 2017 sur AE<=2016)',
+        0,0,0, // AE,
+        0,0,0, // CP
+        0, // RAP
+        category.status, // Statut,
+        0, // Commentaires,
+        cat
+      ]
 
-      operations.push(res)
+      var order = gen('Dépense UO DINSIC (yc sur facture interne interministérielle)', 'Dépense AE')
+      if (o.DateEJ < endOfYear) {
+        order[idxH('AE janv-avril') + periodIdx(o.DateEJ)] = o.RAPEJ
+      } else {
+        order[idxH('Commentaires') + periodIdx(o.DateEJ)] = o.RAPEJ
+      }
+      operations.push(order)
+
+      var pastPayments = gen('Dépense UO DINSIC (yc sur facture interne interministérielle)', 'Dépense CP passée')
+      o.payments.forEach(payment => {
+        if (payment.Date < startOfYear) {
+          return
+        }
+
+        pastPayments[idxH('CP janv-avril') + periodIdx(payment.Date)] += payment.Montant
+      })
+      if (hasCP(pastPayments)) {
+        operations.push(pastPayments)
+      }
+
+      var futurePayments = gen('Dépense UO DINSIC (yc sur facture interne interministérielle)', 'Dépense CP prévue')
+      futurePayments[idxH('CP janv-avril') + periodIdx(o.DatePaiement)] += o.RaP
+      if (hasCP(futurePayments)) {
+        operations.push(futurePayments)
+      }
+
+      var pastReimbursements = gen('rétablissements de crédits uo dinsic (cf convention)', 'Rétablissement passé')
+      o.reimbursements.forEach(reimbursement => {
+        if (reimbursement.Date < startOfYear) {
+          return
+        }
+        pastReimbursements[idxH('AE janv-avril') + periodIdx(reimbursement.Date)] += -reimbursement.Montant
+        pastReimbursements[idxH('CP janv-avril') + periodIdx(reimbursement.Date)] += -reimbursement.Montant
+      })
+      if (hasCP(pastReimbursements)) {
+        operations.push(pastReimbursements)
+      }
+
+      var futureReimbursements = gen('rétablissements de crédits uo dinsic (cf convention)', 'Rétablissement prévu')
+      if (o.DateRbm < endOfYear) {
+        futureReimbursements[idxH('AE janv-avril') + periodIdx(o.DateRbm)] += -o.RaR
+      } else {
+        futureReimbursements[idxH('Commentaires')] += -o.RaR
+      }
+      futureReimbursements[idxH('CP janv-avril') + periodIdx(o.DateRbm)] += -o.RaR
+      if (hasCP(futureReimbursements)) {
+        operations.push(futureReimbursements)
+      }
 
       return operations
     })
@@ -182,13 +282,13 @@ function restitute(data) {
     return result
   }, { orders: data.orders.filter(fluxPropres).filter(fluxCourants), output: {} })
 
-  console.log(JSON.stringify({
+  return {
     full: data,
     //RAPValidation: data.orders.filter(o => o.TypeConvention != 'Délégation de gestion' && o.RaPComputed != o.RaP),
     //RARValidation: data.orders.filter(o => ['Refacturation', 'Fonds de concours'].indexOf(o.TypeConvention) >= 0 && o.RaRComputed != o.RaR),
     dialogue: dialogue,
     counts: [data.orders.length, data.payments.length],
-  }, null, 2))
+  }
 }
 
 var searchBatch = new url.URLSearchParams()
@@ -199,15 +299,31 @@ schemas.forEach(schema => schema.fields.forEach(field => searchBatch.append('ran
 const conf = {
   json: true,
   uri: `https://sheets.googleapis.com/v4/spreadsheets/${sid}/values:batchGet?${searchBatch}`,
-};
+}
 
-(new Promise((resolve) => { resolve(require('./data.json')) }))
-.catch(() => {
-  console.error(searchBatch.toString())
-  return rp(conf)
-  .then(data => fs.writeFileAsync('data.json', JSON.stringify(data, null, 2), 'utf-8').then(() => data))
+var express = require('express')
+var app = express()
+
+app.get('/', function (req, res) {
+  fs.readFileAsync('data.json')
+  .then(content => JSON.parse(content))
+  .catch((error) => {
+    console.error(searchBatch.toString())
+    return rp(conf)
+    .then(data => {
+      return fs.writeFileAsync('data.json', JSON.stringify(data, null, 2), 'utf-8')
+      .then(() => data)
+    })
+  })
+  .then(structure)
+  .then(createRelationships)
+  .then(computeFields)
+  .then(computeSums)
+  .then(restitute)
+  .then(data => {
+    res.header({ 'Access-Control-Allow-Origin': '*' })
+    res.json(data)
+  })
 })
-.then(structure)
-.then(createRelationships)
-.then(computeSums)
-.then(restitute)
+
+app.listen(3000, () => console.log('App listening on port 3000!'))
