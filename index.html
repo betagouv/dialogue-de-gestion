@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html style="height: 100%;" lang="fr-FR"><head>
+<title>Dialogue</title>
+<meta charset="utf-8">
+</head>
+<body>
+  <table></table>
+<script>
+var table = document.getElementsByTagName('table')[0]
+
+var headers = [
+'Activités/Projets',
+'Type de mouvement',
+'Objet de la dépense',
+'Prestataires/Marchés',
+'Références (n° bdc/n°Conv)',
+'RàP 2016 (CP 2017 sur AE<=2016)',
+'AE janv-Avril',
+'AE mai-aout',
+'AE sept-dec',
+'CP janv-Avril',
+'CP mai-aout',
+'CP sept-dec',
+'RàP 2017 sur CP 2018',
+'Statut',
+'Commentaires',
+'Catégorie'
+]
+var header = document.createElement('tr');
+
+headers.forEach(function(name) {
+  var th = document.createElement('th')
+  th.appendChild(document.createTextNode(name))
+
+  header.appendChild(th);
+})
+//table.appendChild(header);
+
+function reqListener () {
+  var data = JSON.parse(this.responseText)
+  console.log(data)
+  Object.keys(data.dialogue.output).forEach(function(category) {
+    var list = data.dialogue.output[category]
+
+    list.forEach(function(orderData) {
+      orderData.forEach(function(row) {
+        var tr = document.createElement('tr')
+        row.forEach(function(cell) {
+          var td = document.createElement('td')
+          td.appendChild(document.createTextNode(cell))
+          tr.appendChild(td)
+        })
+        table.appendChild(tr)
+      })
+    })
+  })
+}
+
+var oReq = new XMLHttpRequest();
+oReq.addEventListener("load", reqListener);
+oReq.open("GET", "http://localhost:3000");
+oReq.send();
+
+</script>
+</body>
+</html>
