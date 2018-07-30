@@ -4,6 +4,8 @@ const rp = require('request-promise')
 const url = require('url')
 
 const utils = require('./utils')
+
+const port = process.env.PORT || 3000
 const sid = process.env.SHEET_SID
 var qs = { key: process.env.API_KEY }
 
@@ -323,6 +325,10 @@ const conf = {
 var express = require('express')
 var app = express()
 
+app.get('/test', function (req, res) {
+  res.json({message: 'OK!'})
+})
+
 app.get('/', function (req, res) {
   main()
   .then(data => {
@@ -361,4 +367,4 @@ app.get('/download', (req, res, next) => {
   .catch(next)
 })
 
-app.listen(3000, () => console.log('App listening on port 3000!'))
+app.listen(port, () => console.log(`App listening on port ${port}!`))

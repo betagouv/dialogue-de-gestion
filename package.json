@@ -2,6 +2,9 @@
   "name": "Generation",
   "version": "0.1.0",
   "description": "Create basic GeoJSON API - l'annuaire de l’administration",
+  "engines": {
+    "node": "8.11.1"
+  },
   "main": "main.js",
   "author": "Thomas Guillet <guillet.thomas@gmail.com>",
   "license": "MIT",
@@ -15,5 +18,7 @@
     "xlsx-populate": "^1.17.0"
   },
   "devDependencies": {},
-  "scripts": {}
+  "scripts": {
+    "start": "node main.js"
+  }
 }
