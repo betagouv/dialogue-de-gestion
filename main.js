@@ -291,21 +291,9 @@ function restitute(data) {
   }
 }
 
-var searchBatch = new url.URLSearchParams()
-searchBatch.append('key', qs.key)
-searchBatch.append('valueRenderOption', 'UNFORMATTED_VALUE')
-searchBatch.append('dateTimeRenderOption', 'SERIAL_NUMBER')
-schemas.forEach(schema => schema.fields.forEach(field => searchBatch.append('ranges', schema.prefix + field.name)))
-const conf = {
-  json: true,
-  uri: `https://sheets.googleapis.com/v4/spreadsheets/${sid}/values:batchGet?${searchBatch}`,
-}
 
-var express = require('express')
-var app = express()
-
-app.get('/', function (req, res) {
-  fs.readFileAsync('data.json')
+function main() {
+  return fs.readFileAsync('data.json')
   .then(content => JSON.parse(content))
   .catch((error) => {
     console.error(searchBatch.toString())
@@ -320,10 +308,57 @@ app.get('/', function (req, res) {
   .then(computeFields)
   .then(computeSums)
   .then(restitute)
+}
+
+var searchBatch = new url.URLSearchParams()
+searchBatch.append('key', qs.key)
+searchBatch.append('valueRenderOption', 'UNFORMATTED_VALUE')
+searchBatch.append('dateTimeRenderOption', 'SERIAL_NUMBER')
+schemas.forEach(schema => schema.fields.forEach(field => searchBatch.append('ranges', schema.prefix + field.name)))
+const conf = {
+  json: true,
+  uri: `https://sheets.googleapis.com/v4/spreadsheets/${sid}/values:batchGet?${searchBatch}`,
+}
+
+var express = require('express')
+var app = express()
+
+app.get('/', function (req, res) {
+  main()
   .then(data => {
     res.header({ 'Access-Control-Allow-Origin': '*' })
     res.json(data)
   })
+})
+
+var XlsxPopulate = require('xlsx-populate')
+
+app.get('/download', (req, res, next) => {
+  main().
+  then(data => {
+    return XlsxPopulate.fromFileAsync('dialogue de gestion 2018 INC - template.xlsx')
+    .then(workbook => {
+      let row = workbook.sheet("INCUBATEUR").cell("A20")
+      Object.keys(data.dialogue.output).forEach(name => {
+        data.dialogue.output[name].forEach(order => {
+          order.forEach(operation => {
+            operation.forEach((cell, j) => row.relativeCell(0, j).value(cell))
+            row = row.relativeCell(1, 0)
+          })
+        })
+      })
+
+      return workbook.outputAsync()
+    })
+  })
+  .then(data => {
+    const d = new Date()
+    const timestamp = d.toISOString().replace(/:/g, '-').slice(0, 19)
+    res.attachment(`${timestamp} dialogue de gestion 2018 INC.xlsx`)
+
+    res.send(data)
+  })
+  .catch(next)
 })
 
 app.listen(3000, () => console.log('App listening on port 3000!'))
