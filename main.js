@@ -293,8 +293,11 @@ function restitute(data) {
   }
 }
 
+function fetch() {
+  if (process.env.NODE_ENV === 'production') {
+    return rp(conf)
+  }
 
-function main() {
   return fs.readFileAsync('data.json')
   .then(content => JSON.parse(content))
   .catch((error) => {
@@ -305,6 +308,10 @@ function main() {
       .then(() => data)
     })
   })
+}
+
+function main() {
+  return fetch()
   .then(structure)
   .then(createRelationships)
   .then(computeFields)
