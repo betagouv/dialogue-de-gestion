@@ -2,6 +2,7 @@
 
 from openpyxl import load_workbook
 from itertools import islice
+import os
 import sys
 import pandas as pd
 import numpy as np
@@ -23,7 +24,7 @@ def GetInOutDataFrame(path):
   while ws.cell(row_index, 1).value:
     row_index = row_index + 1
 
-  column_limit = 'Observations'
+  column_limit = 'Observations cartographie'
   column_max = 20
   column_index = 1
   columns = []
@@ -38,7 +39,7 @@ def GetInOutDataFrame(path):
   data = list(ws.values)[header_row_index:]
   raw_df = pd.DataFrame(data, columns=columns)
 
-  columns = ['Nom', u'Prénom', u'Date d\'entrée', 'Date de sortie', 'Observations']
+  columns = ['Nom', u'Prénom', u'Date d\'entrée', 'Date de sortie', column_limit]
   new_columns = ['NOM', 'PRENOM', 'ENTREE', 'SORTIE', 'IMPUTATION']
   df = raw_df[columns]
 
@@ -129,19 +130,18 @@ def getDailyAttribution(daily_moves, t2):
 
 
 def main():
-  mouvements_path = '/home/thomas/Documents/Beta.gouv.fr/RH/2018-11/'
+  mouvements_path = '/home/thomas/Documents/Beta.gouv.fr/RH/2018-11-29'
 
-
-  moves_dinsic = GetInOutDataFrame(mouvements_path + 'MOUVEMENTS DINSIC.xlsm')
-  moves_rie = GetInOutDataFrame(mouvements_path + 'MOUVEMENTS SCNRIE.xlsm')
+  moves_dinsic = GetInOutDataFrame(os.path.join(mouvements_path, 'MOUVEMENTS DINSIC.xlsm'))
+  moves_rie = GetInOutDataFrame(os.path.join(mouvements_path, 'MOUVEMENTS SCNRIE.xlsm'))
   moves = moves_dinsic.append(moves_rie, ignore_index=True)
 
   daily_moves = getDailyImputation(moves)
-  daily_moves.to_csv('moves-test.csv', encoding='utf-8', index=False)
+  daily_moves.to_csv(os.path.join(mouvements_path, 'moves-test.csv'), encoding='utf-8')
 
-  p = '/home/thomas/Documents/Beta.gouv.fr/RH/2018-11/T2.xlsx'
+  p = os.path.join(mouvements_path, 'T2.xlsx')
   df = getT2(p)
-  df.to_csv('t2-test.csv', encoding='utf-8', sep=";", decimal=",")
+  df.to_csv(os.path.join(mouvements_path, 't2-test.csv'), encoding='utf-8', sep=";", decimal=",")
   print('T2', df.MONTANT.sum())
 
   attrib = getDailyAttribution(daily_moves, df)
@@ -149,14 +149,14 @@ def main():
 
   montants = attrib.groupby('IMPUTATION').MONTANTPERIODE.sum()
   unallocated = attrib[attrib.IMPUTATION.isnull()].MONTANTPERIODE.sum()
-  montants.to_csv('montants-test.csv', encoding='utf-8', sep=";", decimal=",")
+  montants.to_csv(os.path.join(mouvements_path, 'montants-test.csv'), encoding='utf-8', sep=";", decimal=",")
   print(montants.sum() + unallocated)
 
   control_groups_df = attrib.groupby(['NOM', 'PRENOM'])
   control_df = pd.DataFrame({ 'MONTANTPERIODE': control_groups_df.MONTANTPERIODE.sum(), 'JOURS': control_groups_df.IMPUTATION.count() })
-  control_df.to_csv('control-full-test.csv', encoding='utf-8', sep=";", decimal=",")
+  control_df.to_csv(os.path.join(mouvements_path, 'control-full-test.csv'), encoding='utf-8', sep=";", decimal=",")
 
-  control_df[(control_df.MONTANTPERIODE == 0) | (control_df.JOURS == 0)].to_csv('control-test.csv', encoding='utf-8', sep=";", decimal=",")
+  control_df[(control_df.MONTANTPERIODE == 0) | (control_df.JOURS == 0)].to_csv(os.path.join(mouvements_path, 'control-test.csv'), encoding='utf-8', sep=";", decimal=",")
 
 if __name__ == '__main__':
   sys.exit(main())
