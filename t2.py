@@ -4,6 +4,7 @@ from openpyxl import load_workbook
 from itertools import islice
 import sys
 import pandas as pd
+import numpy as np
 
 
 start = '2018-01-01'
@@ -38,7 +39,7 @@ def GetInOutDataFrame(path):
   raw_df = pd.DataFrame(data, columns=columns)
 
   columns = ['Nom', u'Prénom', u'Date d\'entrée', 'Date de sortie', 'Observations']
-  new_columns = ['NOM', 'PRENOM', 'ENTREE', 'SORTIE', 'ATTRIBUTION']
+  new_columns = ['NOM', 'PRENOM', 'ENTREE', 'SORTIE', 'IMPUTATION']
   df = raw_df[columns]
 
   df.columns = new_columns
@@ -47,7 +48,7 @@ def GetInOutDataFrame(path):
 
   for col in df.columns:
     if df[col].dtype == 'object':
-      df[col] = df[col].str.strip()
+      df[col] = df[col].str.strip().str.upper()
 
   df.loc[df.SORTIE.isnull(), 'SORTIE'] = end
   df['MATCH'] = 1
@@ -58,7 +59,7 @@ def GetInOutDataFrame(path):
   return df
 
 
-def getDailyMoves(df):
+def getDailyImputation(df):
   days = pd.date_range(start=start, end=end, freq='B')
   day_df = pd.DataFrame({ 'MATCH': 1, 'JOUR':days})
 
@@ -66,8 +67,7 @@ def getDailyMoves(df):
   idx = (daily_df.ENTREE <= daily_df.JOUR) & (daily_df.JOUR <= daily_df.SORTIE)
   filterd_df = daily_df[idx].copy()
 
-  filterd_df.loc[:, 'PERIODE'] = filterd_df.JOUR.dt.month
-  return filterd_df.set_index(['NOM', 'PRENOM', 'PERIODE'])
+  return filterd_df.set_index(['NOM', 'PRENOM', 'JOUR'])[['IMPUTATION']]
 
 
 def getT2(path):
@@ -92,48 +92,71 @@ def getT2(path):
   limited_df = raw_df[preserved_columns]
   for col in limited_df.columns:
     if limited_df[col].dtype == 'object':
-      limited_df.loc[:,col] = limited_df[col].str.strip()
+      limited_df.loc[:,col] = limited_df[col].str.strip().str.upper()
 
   long_df = limited_df.melt(id_vars=required_columns, var_name='PERIODE', value_name='MONTANT')
-  print(long_df.shape)
   long_df = (long_df[-long_df.MONTANT.isnull()]).copy()
 
-  print(long_df.shape)
   return long_df.groupby([] + required_columns + ['PERIODE']).sum()
 
 
-def getAttribution(moves, t2):
-  distribution = moves.groupby(moves.index.names).ATTRIBUTION.count()
+"""
+  NOM, PRENOM, JOUR -> IMPUTATION
+  NOM, PRENOM, PERIOD, MONTANT
 
-  t2_daily = pd.concat([t2, distribution], axis=1)
-  t2_daily['TJ'] = t2_daily.MONTANT / t2_daily.ATTRIBUTION
+  NOM, PRENOM, JOUR, IMPUTATION, MONTANT
+"""
+def getDailyAttribution(daily_moves, t2):
+  # Add PERIOD to join with T2
+  daily_moves.loc[:,'PERIODE'] = daily_moves.reset_index().JOUR.dt.month.values
+  indexes = ['NOM', 'PRENOM', 'PERIODE']
 
-  moves_montant = pd.merge(moves.reset_index(), t2_daily.TJ.reset_index(), how='outer')
+  # Count rows to spread MONTANT from T2
+  day_counts = pd.Series(daily_moves.groupby(indexes).IMPUTATION.count(), name='NOMBREJOUR')
 
-  return moves_montant
+  t2_period = pd.concat([t2.reset_index().set_index(indexes), day_counts], axis=1, join='outer')
+  t2_period.MONTANT[t2_period.MONTANT.isnull()] = 0
+  t2_period.NOMBREJOUR[t2_period.NOMBREJOUR.isnull()] = 1
+
+  t2_period = t2_period.assign(MONTANTPERIODE=t2_period.MONTANT/t2_period.NOMBREJOUR)
+
+  result = daily_moves.merge(pd.DataFrame(t2_period.MONTANTPERIODE), on=indexes, how='outer')
+
+  if not np.isclose(result.MONTANTPERIODE.sum(), t2.MONTANT.sum()):
+    raise ValueError('Erreur de manipulation', result.MONTANTPERIODE.sum(), t2.MONTANT.sum())
+
+  return result
 
 
 def main():
-  mouvements_path = '/home/thomas/Documents/Beta.gouv.fr/RH/2018-11/MOUVEMENTS DINSIC.xlsm'
-  moves = GetInOutDataFrame(mouvements_path)
-  daily_moves = getDailyMoves(moves)
+  mouvements_path = '/home/thomas/Documents/Beta.gouv.fr/RH/2018-11/'
+
+
+  moves_dinsic = GetInOutDataFrame(mouvements_path + 'MOUVEMENTS DINSIC.xlsm')
+  moves_rie = GetInOutDataFrame(mouvements_path + 'MOUVEMENTS SCNRIE.xlsm')
+  moves = moves_dinsic.append(moves_rie, ignore_index=True)
+
+  daily_moves = getDailyImputation(moves)
   daily_moves.to_csv('moves-test.csv', encoding='utf-8', index=False)
 
   p = '/home/thomas/Documents/Beta.gouv.fr/RH/2018-11/T2.xlsx'
   df = getT2(p)
-  df.to_csv('t2-test.csv', encoding='utf-8')
+  df.to_csv('t2-test.csv', encoding='utf-8', sep=";", decimal=",")
+  print('T2', df.MONTANT.sum())
 
-  attrib = getAttribution(daily_moves, df)
-  attrib.to_csv('attrib-test.csv', encoding='utf-8')
+  attrib = getDailyAttribution(daily_moves, df)
+  attrib.to_csv('attrib-test.csv', encoding='utf-8', sep=";", decimal=",")
 
-  montants = attrib.groupby('ATTRIBUTION').TJ.sum()
-  montants.to_csv('montants-test.csv', encoding='utf-8')
+  montants = attrib.groupby('IMPUTATION').MONTANTPERIODE.sum()
+  unallocated = attrib[attrib.IMPUTATION.isnull()].MONTANTPERIODE.sum()
+  montants.to_csv('montants-test.csv', encoding='utf-8', sep=";", decimal=",")
+  print(montants.sum() + unallocated)
 
   control_groups_df = attrib.groupby(['NOM', 'PRENOM'])
-  control_df = pd.DataFrame({ 'MONTANT': control_groups_df.TJ.sum(), 'JOURS': control_groups_df.ENTREE.count() })
-  control_df.to_csv('control-full-test.csv', encoding='utf-8')
+  control_df = pd.DataFrame({ 'MONTANTPERIODE': control_groups_df.MONTANTPERIODE.sum(), 'JOURS': control_groups_df.IMPUTATION.count() })
+  control_df.to_csv('control-full-test.csv', encoding='utf-8', sep=";", decimal=",")
 
-  control_df[(control_df.MONTANT == 0) | (control_df.JOURS == 0)].to_csv('control-test.csv', encoding='utf-8')
+  control_df[(control_df.MONTANTPERIODE == 0) | (control_df.JOURS == 0)].to_csv('control-test.csv', encoding='utf-8', sep=";", decimal=",")
 
 if __name__ == '__main__':
   sys.exit(main())
