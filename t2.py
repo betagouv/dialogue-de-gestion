@@ -90,15 +90,12 @@ def getT2(path):
   if len(missing):
     raise KeyError('Des champs obligatoires sont manquants : ' + missing)
 
-  limited_df = raw_df[preserved_columns]
-  for col in limited_df.columns:
-    if limited_df[col].dtype == 'object':
-      limited_df.loc[:,col] = limited_df[col].str.strip().str.upper()
+  for col in preserved_columns:
+    if raw_df[col].dtype == 'object':
+      raw_df[col] = raw_df[col].str.strip().str.upper()
 
-  long_df = limited_df.melt(id_vars=required_columns, var_name='PERIODE', value_name='MONTANT')
-  long_df = (long_df[-long_df.MONTANT.isnull()]).copy()
-
-  return long_df.groupby([] + required_columns + ['PERIODE']).sum()
+  long_df = raw_df[preserved_columns].melt(id_vars=required_columns, var_name='PERIODE', value_name='MONTANT')
+  return long_df[-long_df.MONTANT.isnull()].groupby([] + required_columns + ['PERIODE']).sum()
 
 
 """
@@ -111,6 +108,8 @@ def getDailyAttribution(daily_moves, t2):
   # Add PERIOD to join with T2
   daily_moves.loc[:,'PERIODE'] = daily_moves.reset_index().JOUR.dt.month.values
   indexes = ['NOM', 'PRENOM', 'PERIODE']
+
+  daily_moves.IMPUTATION.replace(np.NaN, u'NON ALLOUÉ', inplace=True)
 
   # Count rows to spread MONTANT from T2
   day_counts = pd.Series(daily_moves.groupby(indexes).IMPUTATION.count(), name='NOMBREJOUR')
@@ -130,7 +129,10 @@ def getDailyAttribution(daily_moves, t2):
 
 
 def main():
-  mouvements_path = '/home/thomas/Documents/Beta.gouv.fr/RH/2018-11-29'
+
+  if sys.argv < 2:
+    raise ValueError('Vous devez spécifier le dossier contenant les fichiers de mouvements et le T2')
+  mouvements_path = sys.argv[len(sys.argv) - 1]
 
   moves_dinsic = GetInOutDataFrame(os.path.join(mouvements_path, 'MOUVEMENTS DINSIC.xlsm'))
   moves_rie = GetInOutDataFrame(os.path.join(mouvements_path, 'MOUVEMENTS SCNRIE.xlsm'))
@@ -157,6 +159,7 @@ def main():
   control_df.to_csv(os.path.join(mouvements_path, 'control-full-test.csv'), encoding='utf-8', sep=";", decimal=",")
 
   control_df[(control_df.MONTANTPERIODE == 0) | (control_df.JOURS == 0)].to_csv(os.path.join(mouvements_path, 'control-test.csv'), encoding='utf-8', sep=";", decimal=",")
+
 
 if __name__ == '__main__':
   sys.exit(main())
